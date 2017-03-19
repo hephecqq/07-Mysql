@@ -1,0 +1,587 @@
+
+
+#慕课网
+#sql的重要性
+#1.增加数据库的处理效率，减少应用相应时间
+#2.减少数据库服务器的负载，增加服务器的稳定性
+#3.减少服务器通讯的网络流量
+#显示表
+SHOW TABLES ;
+
+#JOIN
+#INNER
+#OUTER(FULL/RIGHT/LEFT/CROSS)
+  #显示表
+SHOW TABLES ;
+  #创建表
+DROP TABLE  im_user ;
+CREATE TABLE im_user(
+  id INT PRIMARY KEY AUTO_INCREMENT COMMENT '编号',
+  use_name NVARCHAR(10) NOT NULL COMMENT '名称',
+  over NVARCHAR(10) COMMENT '等级'
+);
+
+  CREATE TABLE im_friend(
+    id INT PRIMARY KEY AUTO_INCREMENT COMMENT '编号',
+    use_name NVARCHAR(10) NOT NULL COMMENT '名称',
+    over NVARCHAR(10) COMMENT '等级'
+  );
+
+
+
+  #添加外键约束 cannot?
+  ALTER TABLE im_kill ADD CONSTRAINT fk1 FOREIGN KEY (id) REFERENCES im_user(user_id);
+  #随机数 FLOOR(i + RAND() * (j – i + 1)) kills 1-20
+  SELECT +now();
+  SELECT  date_add(now(),INTERVAL floor(-10+rand()*(21)) DAY);
+
+
+  #存储过程插入数据
+  DROP PROCEDURE IF EXISTS usp_getdata;
+  CREATE PROCEDURE usp_getdata(
+  num INT
+  )
+  BEGIN
+    DECLARE i INT;
+    #创建表
+    DROP TABLE IF EXISTS im_kill;
+    CREATE TABLE im_kill(
+      id INT PRIMARY KEY AUTO_INCREMENT COMMENT '编号',
+      user_id INT NOT NULL COMMENT '用户编号',
+      killtime DATETIME NOT NULL COMMENT '打怪时间',
+      kills INT NOT NULL  COMMENT '打怪数量'
+    );
+    SET i=0;
+    WHILE i<num DO
+      INSERT INTO im_kill VALUES (NULL ,floor(1+rand()*4),date_add(now(),INTERVAL floor(-10+rand()*(21)) DAY),
+                                  floor(1+rand()*(21)));
+      SET i=i+1;
+    END WHILE;
+  END;
+
+  #执行存储过程 705ms
+  CALL usp_getdata(20);
+  SELECT * FROM im_kill;
+
+  #插入表语句
+DELETE FROM im_user;
+INSERT INTO im_user
+VALUES(NULL,'唐僧','玉檀功德佛'),(NULL,'猪八戒','净坛使者'),
+(NULL,'孙悟空','斗战神佛'),(NULL,'沙僧','金沙罗汉');
+  #im_friend
+INSERT INTO im_friend
+VALUES(NULL,'孙悟空','齐天大圣'),(NULL,'牛魔王','朋友'),
+  (NULL,'白骨精','情人'),(NULL,'狮驼王','笨蛋');
+  #im_kill
+
+  #INNER JOIN
+SELECT * FROM im_user AS a
+INNER JOIN im_friend AS b ON a.use_name=b.use_name;
+  #LEFT JOIN
+SELECT * FROM im_user AS a
+LEFT JOIN  im_friend AS b ON a.use_name=b.use_name;
+  #RIGHT JOIN
+SELECT * FROM im_user AS a
+RIGHT JOIN  im_friend AS b ON a.use_name=b.use_name;
+  #FULL JOIN 通过UNION ALL
+SELECT * FROM im_user AS a
+UNION ALL
+SELECT * FROM im_friend AS b;
+  #CROSS JOIN
+SELECT * FROM im_user AS a
+CROSS JOIN im_friend AS b;
+
+  #mysql报错
+UPDATE im_user SET over='齐天大圣'
+WHERE use_name IN (
+    SELECT a.use_name FROM im_user AS a
+    INNER JOIN im_friend AS b
+    ON a.use_name=b.use_name
+);
+#使用临时表的模式
+UPDATE im_user AS a
+INNER JOIN(
+  SELECT a.use_name FROM im_user AS a
+    INNER JOIN im_friend AS b
+      ON a.use_name=b.use_name
+)AS t ON a.use_name=t.use_name
+SET a.over='齐天大圣';
+
+  SELECT * FROM im_user;
+  #子查询 14ms
+SELECT a.id,a.use_name,
+  a.over,(SELECT b.over FROM im_friend as b
+          WHERE a.use_name=b.use_name)
+          AS over2
+FROM im_user AS a;
+  #JOIN 5ms 关联查询比子查询速度块
+SELECT a.id,a.use_name,
+        a.over,b.over AS over2
+FROM im_user AS a
+LEFT JOIN im_friend AS b ON a.use_name=b.use_name;
+
+  #查询打怪最多的日期 18
+  SELECT
+    a.use_name,
+    b.kills,
+    b.killtime
+  FROM im_user AS a
+  INNER JOIN im_kill AS b ON a.id = b.user_id
+  WHERE b.kills =
+        (SELECT
+           kills
+         FROM im_kill AS c
+         WHERE c.user_id=b.user_id
+         ORDER BY kills DESC
+         LIMIT 1);
+  #优化 避免子查询
+  SELECT
+    a.use_name,
+    b.kills,
+    b.killtime
+  FROM im_user AS a
+  INNER JOIN im_kill AS b ON a.id = b.user_id
+  INNER JOIN im_kill AS c ON c.user_id=b.user_id
+  GROUP BY a.use_name,b.kills,b.killtime
+  HAVING b.kills=max(c.kills);
+
+  #查找每个人打怪前两次时间
+  #窗口函数? mysql 不支持
+  SELECT
+  a.use_name,
+  b.kills,
+  b.killtime,
+  ROW_NUMBER() OVER ( PARTITION BY a.use_name OVER BY b.kills) cnt
+  FROM im_user AS a
+  INNER JOIN im_kill AS b ON a.id = b.user_id
+  WHERE cnt<=2;
+
+  #另一种 mysql如何实现窗口函数
+  SELECT
+    d.use_name,
+    c.killtime,
+    kills
+  FROM (
+         SELECT
+           user_id,
+           killtime,
+           kills,
+           (SELECT count(id)
+            FROM im_kill AS b
+            WHERE b.user_id = a.user_id AND a.kills <= b.kills) AS cnt
+         FROM im_kill AS a
+         GROUP BY user_id, kills, killtime
+       ) AS c INNER JOIN im_user AS d ON c.user_id = d.id
+  WHERE cnt <= 2;
+
+  #行列转换
+  SELECT
+    a.use_name,
+    sum(b.kills)
+  FROM im_user AS a
+    INNER JOIN im_kill AS b ON b.user_id = a.id
+  GROUP BY a.use_name;
+
+  SELECT
+    a.use_name,
+    sum(b.kills)
+  FROM im_user AS a
+    INNER JOIN im_kill AS b ON b.user_id = a.id
+  GROUP BY a.use_name;
+
+  SELECT *
+  FROM (
+         SELECT sum(b.kills) AS '唐僧'
+         FROM im_user AS a
+           INNER JOIN im_kill AS b ON b.user_id = a.id
+         WHERE use_name = "唐僧"
+       ) AS a CROSS JOIN
+    (
+      SELECT sum(b.kills) AS '孙悟空'
+      FROM im_user AS a
+        INNER JOIN im_kill AS b ON b.user_id = a.id
+      WHERE use_name = "孙悟空"
+    ) AS b CROSS JOIN
+    (
+      SELECT sum(b.kills) AS '猪八戒'
+      FROM im_user AS a
+        INNER JOIN im_kill AS b ON b.user_id = a.id
+      WHERE use_name = "猪八戒"
+    ) AS c CROSS JOIN
+    (
+      SELECT sum(b.kills) AS '沙僧'
+      FROM im_user AS a
+        INNER JOIN im_kill AS b ON b.user_id = a.id
+      WHERE use_name = "沙僧"
+    ) AS d;
+
+  SELECT
+    sum(CASE WHEN use_name = "唐僧"
+      THEN b.kills
+        ELSE 0 END) AS '唐僧',
+    sum(CASE WHEN use_name = "孙悟空"
+      THEN b.kills
+        ELSE 0 END) AS '孙悟空',
+    sum(CASE WHEN use_name = "沙僧"
+      THEN b.kills
+        ELSE 0 END) AS '沙僧',
+    sum(CASE WHEN use_name = "猪八戒"
+      THEN b.kills
+        ELSE 0 END) AS '猪八戒'
+  FROM im_user AS a
+    INNER JOIN im_kill AS b ON b.user_id = a.id;
+
+  #添加一列实现列转行
+  ALTER TABLE im_user ADD COLUMN phone NVARCHAR(50);
+  UPDATE im_user SET phone="123,345,456,567,753,235,745,876" WHERE id=1;
+  UPDATE im_user SET phone="143,446,346,633,235,345,356" WHERE id=2;
+  UPDATE im_user SET phone="456,754,465,464,743,365,545,546,644" WHERE id=3;
+  UPDATE im_user SET phone="356,355,456,567,745,876" WHERE id=4;
+
+  #存储过程建立序列表 表名参数未实现￥￥￥￥￥￥￥￥￥￥￥￥￥￥
+  DROP PROCEDURE IF EXISTS usp_getseqtable;
+  CREATE PROCEDURE usp_getseqtable(
+    IN tablename NVARCHAR(10),
+    IN id        INT
+  )
+    BEGIN
+      DECLARE i INT;
+      DECLARE sqlstr NVARCHAR(255);
+      SET sqlstr = CONCAT(
+          'DROP TABLE IF EXISTS ', tablename ,';',
+          'CREATE TABLE ', tablename ,'(
+                 id INT AUTO_INCREMENT PRIMARY KEY
+                )ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8'
+      );
+      PREPARE stmt FROM sqlstr;
+      EXECUTE stmt;
+      SET i=1;
+      WHILE i <= id DO
+        #插入表数据
+        SET sqlstr = CONCAT(
+            'INSERT INTO ',tablename,'VALUES (NULL);'
+        );
+        PREPARE stmt FROM sqlstr;
+        EXECUTE stmt;
+        SET i = i + 1;
+      END WHILE;
+    END;
+  #有时间看看############################################
+
+  #查询记录数
+  SELECT count(id) FROM im_kill;
+  #序列静态表存储过程
+  DROP PROCEDURE IF EXISTS usp_getseqtable;
+  CREATE PROCEDURE usp_getseqtable(
+    IN id        INT
+  )
+    BEGIN
+      DECLARE i INT;
+      DROP TABLE IF EXISTS im_sequence;
+      CREATE TABLE  im_sequence (
+             id INT AUTO_INCREMENT PRIMARY KEY
+            )ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
+      SET i=1;
+      WHILE i <= id DO
+        #插入表数据
+          INSERT INTO im_sequence VALUES (NULL);
+        SET i = i + 1;
+      END WHILE;
+    END;
+  CALL usp_getseqtable(20);
+
+ #行列转换 符号分割列转行 尝试更改为存储过程
+  SELECT
+    c.use_name,
+    replace(
+        substring(
+            substring_index(c.phone,',', a.id),
+            char_length(
+                substring_index(c.phone,',',a.id - 1)
+            ) + 1),
+        ',','') AS phone
+  FROM im_sequence AS a
+    CROSS JOIN
+    (
+      SELECT
+        b.use_name,
+        concat(b.phone, ',') AS phone,
+        length(b.phone) - length(replace(b.phone,',','')) + 1 AS size
+      FROM im_user AS b
+    )AS c ON a.id <= c.size;
+
+  SELECT use_name FROM im_user;
+  #装备表
+  DROP TABLE IF EXISTS im_arms;
+  CREATE TABLE im_arms(
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL ,
+    arms NVARCHAR(64),
+    clothing NVARCHAR(64),
+    shoe NVARCHAR(64)
+  );
+  DESC rmysql.im_user;
+  DESC im_arms;
+  #自动增长类型是不能设置外键的么？
+  ALTER TABLE im_arms ADD CONSTRAINT fk1 FOREIGN KEY (id) REFERENCES im_user(user_id);
+  SELECT * FROM im_user;
+  INSERT im_arms VALUES (NULL ,1,'九环锡杖','袈裟','僧鞋'),(NULL ,2,'九齿钉耙','僧衣','僧鞋'),
+    (NULL ,3,'金箍棒','梭子黄金甲','藕丝步云履'),(NULL ,4,'降妖宝仗','僧衣','僧鞋');
+
+  SELECT
+    b.use_name,
+    'arms' AS 'equipment',
+    a.arms
+  FROM im_arms AS a
+    INNER JOIN im_user AS b ON a.user_id = b.id
+  UNION ALL
+  SELECT
+    b.use_name,
+    'clothing' AS 'equipment',
+    a.clothing
+  FROM im_arms AS a
+    INNER JOIN im_user AS b ON a.user_id = b.id
+  UNION ALL
+  SELECT
+    b.use_name,
+    'shoe' AS 'equipment',
+    a.shoe
+  FROM im_arms AS a
+    INNER JOIN im_user AS b ON a.user_id = b.id
+  ORDER BY use_name;
+
+  #另一种方法 类序列表
+  SELECT
+    a.use_name,
+    CASE
+      WHEN c.id=1 THEN 'arms'
+      WHEN c.id=2 THEN 'clothing'
+      WHEN c.id=3 THEN 'shoe'
+    END AS equ,
+    coalesce(
+        CASE WHEN c.id=1 THEN b.arms ELSE NULL END ,
+        CASE WHEN c.id=2 THEN b.clothing ELSE NULL END ,
+        CASE WHEN c.id=3 THEN b.shoe ELSE NULL END
+    )AS 'equipment'
+
+  FROM im_user AS a
+    INNER JOIN im_arms AS b ON a.id = b.user_id
+  CROSS JOIN im_sequence AS  c
+  WHERE c.id<=3 #3为需要分割的列
+  ORDER BY a.use_name;
+
+  #唯一序列号 获取当前年月日+3位流水号
+  #用orser_seq判断插入最大值
+  DROP PROCEDURE IF EXISTS usp_seqnum;
+  CREATE PROCEDURE usp_seqnum()
+    BEGIN
+      #定义变量并获取相关值
+      DECLARE v_cnt INT;
+      DECLARE v_timestr INT;
+      SET v_timestr = DATE_FORMAT(NOW(),'%Y%m%d');
+      SELECT ROUND(RAND()*100,0)+1 INTO v_cnt;
+      #新建表
+      DROP TABLE IF EXISTS im_orderseq;
+      CREATE TABLE  im_orderseq(
+        timestr NVARCHAR(8) NOT NULL ,
+        ordersn INT(3)
+      );
+      START TRANSACTION;
+      #更新表的最值
+      UPDATE im_orderseq SET ordersn = ordersn + v_cnt WHERE timestr = v_timestr;
+      IF ROW_COUNT() = 0 THEN
+        #插入数据
+        INSERT INTO im_orderseq(timestr,ordersn) VALUES(v_timestr,v_cnt);
+      END IF;
+      SELECT CONCAT(v_timestr,LPAD(ordersn,7,0))AS ordersn
+      FROM im_orderseq WHERE timestr = v_timestr;
+      COMMIT;
+    END;
+
+  CALL usp_seqnum();
+  SELECT * FROM im_orderseq;
+  SELECT ROUND(RAND()*100,0)+1;
+
+  #删除重复数据，对于相同数据保留ID最大的
+  DELETE a
+  FROM im_user AS a
+  INNER JOIN (
+           SELECT
+             use_name,
+             MAX(id) AS id
+           FROM im_user
+           GROUP BY use_name
+           HAVING COUNT(id) > 1
+         )AS b ON a.use_name = b.use_name
+  WHERE a.id < b.id;
+
+  #mysql 拷贝表
+  #1.拷贝表结构
+  CREATE TABLE newadmin LIKE admin;
+  #2.拷贝表数据
+  CREATE TABLE newadmin AS
+    (
+      SELECT *
+      FROM admin
+    );
+  #3.拷贝表结构和数据
+  CREATE TABLE newadmin LIKE admin;
+  INSERT INTO newadmin SELECT * FROM admin;
+
+  #拷贝表im_user做测试
+  CREATE TABLE im_userrepect AS (
+    SELECT id,phone FROM im_user
+  );
+
+  SELECT * FROM im_userrepect;
+  UPDATE im_userrepect SET phone='123,345,745,567,753,567,745,876' WHERE id=1;
+  UPDATE im_userrepect SET phone='143,446,346,143,235,345,356' WHERE id=2;
+  UPDATE im_userrepect SET phone='456,754,465,644,743,365,545,546,644' WHERE id=3;
+
+
+-- split function
+--    s   : string to split
+--    del : delimiter
+--    i   : index requested
+--
+DROP FUNCTION IF EXISTS SPLIT_STRING;
+CREATE FUNCTION
+  SPLIT_STRING ( s VARCHAR(1024) , del CHAR(1) , i INT)
+  RETURNS VARCHAR(1024)
+DETERMINISTIC -- always returns same results for same input parameters
+  BEGIN
+    DECLARE n INT ;
+    -- get max number of items
+    SET n = LENGTH(s) - LENGTH(REPLACE(s, del, '')) + 1;
+    IF i > n THEN
+      RETURN NULL ;
+    ELSE
+      RETURN SUBSTRING_INDEX(SUBSTRING_INDEX(s, del, i) , del , -1 ) ;
+    END IF;
+  END;
+
+SELECT SPLIT_STRING(phone,',',1) FROM im_userrepect;
+
+#慕课最后一题
+CREATE TEMPORARY TABLE im_tuser AS (
+  SELECT
+    c.id,
+    replace(
+        substring(
+            substring_index(c.phone, ',', a.id),
+            char_length(
+                substring_index(c.phone, ',', a.id - 1)
+            ) + 1),
+        ',', '') AS phone
+  FROM im_sequence AS a
+    CROSS JOIN
+    (
+      SELECT
+        b.id,
+        concat(b.phone, ',')                                    AS phone,
+        length(b.phone) - length(replace(b.phone, ',', '')) + 1 AS size
+      FROM im_userrepect AS b
+    ) AS c ON a.id <= c.size
+);
+
+SELECT
+    CASE WHEN id=1 THEN concat(phone,',') END
+ AS phone,
+  id
+FROM im_tuser
+GROUP BY id,phone;
+
+
+#利用mysql 自带序列表 help_topic 行转列 不得超过504个符合分割的值的个数
+SELECT
+  a.id,
+  substring_index(substring_index(a.phone, ',', b.help_topic_id + 1), ',', -1)
+FROM
+  im_userrepect a
+  JOIN
+  mysql.help_topic b
+    ON b.help_topic_id < (length(a.phone) - length(replace(a.phone, ',', '')) + 1)
+ORDER BY a.id;
+
+
+#慕课3
+#查询每一个取经
+SELECT
+  a.use_name,
+  b.kills,
+  b.killtime
+FROM im_user AS a
+  INNER JOIN im_kill AS b ON a.id = b.user_id
+  INNER JOIN (
+               SELECT
+                 user_id,
+                 max(kills) AS cnt
+               FROM im_kill
+               GROUP BY user_id
+             ) AS c ON c.user_id = b.user_id AND c.cnt = b.kills;
+
+  #方法2mysql中独有的列过滤方式：
+#如何处理最大值相同的情况 max函数可以解决 倒叙取第一列就不能
+SELECT
+  a.use_name,
+  b.killtime,
+  b.kills
+FROM im_user AS a
+  INNER JOIN im_kill AS b ON a.id = b.user_id
+WHERE (b.user_id, b.kills) IN (
+  SELECT
+    user_id,
+    max(kills) AS kills
+  FROM im_kill
+  GROUP BY user_id
+);
+
+SELECT id,user_id,kills FROM im_kill
+ORDER BY user_id,kills DESC;
+
+UPDATE im_kill SET kills=12 WHERE id=5;
+
+SELECT * FROM im_user;
+#新加技能表
+DROP TABLE IF EXISTS im_skill;
+CREATE TABLE im_skill(
+  id INT AUTO_INCREMENT PRIMARY KEY ,
+  user_id INT NOT NULL ,
+  skill NVARCHAR(10) NOT NULL ,
+  skill_level TINYINT NOT NULL
+);
+
+INSERT INTO im_skill VALUES (NULL,1,'紧箍咒',5),(NULL,1,'打坐',4),(NULL,1,'念经',5),(NULL,1,'变化',0),
+  (NULL,2,'紧箍咒',0),(NULL,2,'念经',0),(NULL,2,'腾云',3),(NULL,2,'变化',4),(NULL,2,'浮水',5),
+  (NULL,3,'紧箍咒',0),(NULL,3,'念经',2),(NULL,3,'腾云',5),(NULL,3,'变化',5),(NULL,3,'浮水',3),(NULL,3,'请神',5),
+  (NULL,4,'紧箍咒',0),(NULL,4,'念经',1),(NULL,4,'腾云',2),(NULL,4,'变化',2),(NULL,4,'浮水',4);
+
+SELECT b.use_name FROM im_skill AS a
+  INNER JOIN im_user AS b ON a.user_id=b.id
+WHERE skill='念经'AND skill_level<>0
+AND a.user_id IN (
+  SELECT user_id FROM im_skill
+  WHERE skill='变化' AND skill_level<>0
+);
+
+SELECT a.use_name,b.skill,c.skill,d.skill,e.skill
+FROM im_user AS a
+LEFT JOIN im_skill AS b ON a.id=b.user_id AND b.skill='念经' AND b.skill_level>0
+LEFT JOIN im_skill AS c ON a.id=c.user_id AND c.skill='变化'AND c.skill_level>0
+LEFT JOIN im_skill AS d ON a.id=d.user_id AND d.skill='腾云' AND d.skill_level>0
+LEFT JOIN im_skill AS e ON a.id=e.user_id AND e.skill='浮水'AND e.skill_level>0
+WHERE (
+  CASE WHEN b.skill IS NOT NULL THEN 1 ELSE 0 END +
+  CASE WHEN c.skill IS NOT NULL THEN 1 ELSE 0 END +
+  CASE WHEN d.skill IS NOT NULL THEN 1 ELSE 0 END +
+  CASE WHEN e.skill IS NOT NULL THEN 1 ELSE 0 END
+)>=2;
+
+#方法3
+SELECT a.use_name
+FROM im_user AS a
+INNER JOIN im_skill AS b ON a.id=b.user_id
+WHERE b.skill IN ('念经','变化','腾云','浮水') AND b.skill_level>0
+GROUP BY a.use_name,a.id
+HAVING count(a.id)>=2;
+
