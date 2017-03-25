@@ -402,7 +402,7 @@ LEFT JOIN im_friend AS b ON a.use_name=b.use_name;
   SELECT * FROM im_orderseq;
   SELECT ROUND(RAND()*100,0)+1;
 
-  #删除重复数据，对于相同数据保留ID最大的
+  #删除重复数据-对于相同数据保留ID最大的
   DELETE a
   FROM im_user AS a
   INNER JOIN (
@@ -584,4 +584,5 @@ INNER JOIN im_skill AS b ON a.id=b.user_id
 WHERE b.skill IN ('念经','变化','腾云','浮水') AND b.skill_level>0
 GROUP BY a.use_name,a.id
 HAVING count(a.id)>=2;
+
 
